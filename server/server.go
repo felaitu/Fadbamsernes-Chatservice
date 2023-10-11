@@ -7,16 +7,15 @@ import (
 	"log"
 	"net"
 	"strconv"
-	"time"
 
 	"google.golang.org/grpc"
 )
 
 // Struct that will be used to represent the Server.
 type Server struct {
-	proto.UnimplementedTimeAskServer // Necessary
-	name                             string
-	port                             int
+	proto.UnimplementedMessageServiceServer
+	name string
+	port int
 }
 
 // Used to get the user-defined port for the server from the command line
@@ -55,17 +54,16 @@ func startServer(server *Server) {
 	log.Printf("Started server at port: %d\n", server.port)
 
 	// Register the grpc server and serve its listener
-	proto.RegisterTimeAskServer(grpcServer, server)
+	proto.RegisterMessageServiceServer(grpcServer, server)
 	serveError := grpcServer.Serve(listener)
 	if serveError != nil {
 		log.Fatalf("Could not serve listener")
 	}
 }
 
-func (c *Server) AskForTime(ctx context.Context, in *proto.AskForTimeMessage) (*proto.TimeMessage, error) {
-	log.Printf("Client with ID %d asked for the time with message %s\n", in.ClientId, in.ClientMessage)
-	return &proto.TimeMessage{
-		Time:       time.Now().String(),
-		ServerName: c.name,
+func (c *Server) SendMessageToServer(ctx context.Context, in *proto.MessageData) (*proto.Confirmation, error) {
+	log.Printf("Received message from client %d : %s\n", in.FromClientId, in.ClientMessage)
+	return &proto.Confirmation{
+		Confirmation: 200,
 	}, nil
 }

@@ -1,0 +1,23 @@
+syntax = "proto3";
+
+package chatProto;
+
+option go_package = "grpc/proto";
+
+message MessageData {
+  int64 fromClientId = 1;
+  int64 recipient = 2;
+  string clientMessage = 3;
+}
+
+message Confirmation {
+  int64 confirmation = 1;
+}
+
+service MessageService {
+  rpc SendMessageToServer(MessageData) returns (Confirmation);
+}
+
+service ClientService {
+  rpc LogMessage(MessageData) returns (Confirmation);
+}
