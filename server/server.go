@@ -9,6 +9,7 @@ import (
 	"strconv"
 
 	"google.golang.org/grpc"
+	"google.golang.org/grpc/credentials/insecure"
 )
 
 // Struct that will be used to represent the Server.
@@ -61,8 +62,31 @@ func startServer(server *Server) {
 	}
 }
 
+func logMessageRpc(in *proto.MessageData) {
+	clientPort := int(in.Recipient)
+
+	conn, err := grpc.Dial("localhost:"+strconv.Itoa(clientPort), grpc.WithTransportCredentials(insecure.NewCredentials()))
+	if err != nil {
+		log.Fatalf("Womp womp")
+	} else {
+		log.Printf("Connected to the client at port %d\n", clientPort)
+	}
+
+	client := proto.NewClientServiceClient(conn)
+
+	log.Printf("[+] Sending message %s from %d to %d", in.ClientMessage, in.FromClientId, in.Recipient)
+	client.LogMessage(context.Background(), &proto.MessageData{
+		FromClientId:  int64(clientPort),
+		Recipient:     int64(clientPort), // crazy
+		ClientMessage: in.ClientMessage,
+	})
+}
+
 func (c *Server) SendMessageToServer(ctx context.Context, in *proto.MessageData) (*proto.Confirmation, error) {
 	log.Printf("Received message from client %d : %s\n", in.FromClientId, in.ClientMessage)
+
+	logMessageRpc(in)
+
 	return &proto.Confirmation{
 		Confirmation: 200,
 	}, nil

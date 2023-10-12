@@ -18,6 +18,6 @@ service MessageService {
   rpc SendMessageToServer(MessageData) returns (Confirmation);
 }
 
-service ClientService {
+service ClientService{
   rpc LogMessage(MessageData) returns (Confirmation);
 }
