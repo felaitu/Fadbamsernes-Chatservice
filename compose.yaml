@@ -12,4 +12,18 @@ services:
     restart: always
     networks:
       frontend:
-        ipv4_address: 172.20.0.2
+        ipv4_address: 172.20.0.100
+    environment:
+      - IP=172.20.0.100
+  client:
+    build:
+      context: .
+      dockerfile:  ./client/Dockerfile
+    restart: always
+    links:
+      - server
+    networks:
+      frontend:
+    deploy:
+      mode: replicated
+      replicas: 5

@@ -3,9 +3,9 @@ package main
 import (
 	proto "Exercise5/grpc"
 	"context"
-	"flag"
 	"log"
 	"net"
+	"os"
 	"strconv"
 
 	"google.golang.org/grpc"
@@ -16,20 +16,23 @@ import (
 type Server struct {
 	proto.UnimplementedMessageServiceServer
 	name string
+	ip   string
 	port int
 }
 
+var (
+	clients = make([]string, 0)
+	t       = 0
+)
+
 // Used to get the user-defined port for the server from the command line
-var port = flag.Int("port", 0, "server port number")
 
 func main() {
-	// Get the port from the command line when the server is run
-	flag.Parse()
-
 	// Create a server struct
 	server := &Server{
 		name: "serverName",
-		port: *port,
+		ip:   os.Getenv("IP"),
+		port: 6969,
 	}
 
 	// Start the server
@@ -58,34 +61,51 @@ func startServer(server *Server) {
 	proto.RegisterMessageServiceServer(grpcServer, server)
 	serveError := grpcServer.Serve(listener)
 	if serveError != nil {
-		log.Fatalf("Could not serve listener")
+		log.Fatal("Could not serve listener")
 	}
 }
 
 func logMessageRpc(in *proto.MessageData) {
-	clientPort := int(in.Recipient)
+	for idx, clientIp := range clients {
+		if idx == 0 {
+			log.Printf("%s\n", in.ClientMessage)
+		}
 
-	conn, err := grpc.Dial("localhost:"+strconv.Itoa(clientPort), grpc.WithTransportCredentials(insecure.NewCredentials()))
-	if err != nil {
-		log.Fatalf("Womp womp")
-	} else {
-		log.Printf("Connected to the client at port %d\n", clientPort)
+		conn, err := grpc.Dial(clientIp+":"+strconv.Itoa(6969), grpc.WithTransportCredentials(insecure.NewCredentials()))
+		if err != nil {
+			log.Fatalf("Failed to connect to ip %s\n", clientIp)
+		}
+
+		client := proto.NewClientServiceClient(conn)
+
+		_, err = client.LogMessage(context.Background(), &proto.MessageData{
+			ClientIp:      in.ClientIp,
+			ClientMessage: in.ClientMessage,
+		})
+
+		if err != nil {
+			log.Fatal(err.Error())
+		}
 	}
+}
 
-	client := proto.NewClientServiceClient(conn)
-
-	log.Printf("[+] Sending message %s from %d to %d", in.ClientMessage, in.FromClientId, in.Recipient)
-	client.LogMessage(context.Background(), &proto.MessageData{
-		FromClientId:  int64(clientPort),
-		Recipient:     int64(clientPort), // crazy
-		ClientMessage: in.ClientMessage,
-	})
+func registerClient(in *proto.MessageData) {
+	clients = append(clients, in.ClientIp)
 }
 
 func (c *Server) SendMessageToServer(ctx context.Context, in *proto.MessageData) (*proto.Confirmation, error) {
-	log.Printf("Received message from client %d : %s\n", in.FromClientId, in.ClientMessage)
-
 	logMessageRpc(in)
+
+	return &proto.Confirmation{
+		Confirmation: 200,
+	}, nil
+}
+
+// WIP
+func (c *Server) Register(ctx context.Context, in *proto.MessageData) (*proto.Confirmation, error) {
+	log.Printf("Received register from client %s\n", in.ClientIp)
+
+	registerClient(in)
 
 	return &proto.Confirmation{
 		Confirmation: 200,

@@ -10,4 +10,4 @@ COPY . .
 
 EXPOSE 6969
 
-CMD ["go", "run", "./server/server.go"]
+CMD ["go", "run", "./client/client.go", "-serverIpAddr=172.20.0.100", "-sPort=6969"]
