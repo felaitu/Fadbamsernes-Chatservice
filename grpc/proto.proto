@@ -7,6 +7,7 @@ option go_package = "grpc/proto";
 message MessageData {
   string clientIp = 1;
   string clientMessage = 2;
+  int64 lamportTs = 3;
 }
 
 message Confirmation {

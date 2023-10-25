@@ -54,12 +54,12 @@ type Client struct {
 	ip string
 }
 
+const SERVER_PORT = 6969
+
 var (
-	// ipAddr       = flag.Int("clientIpAddr", 0, "client ip")
-	serverIp     = flag.String("serverIpAddr", "172.20.0.100", "server ip")
-	serverPort   = flag.Int("sPort", 0, "server port number")
-	messageQueue = queue.NewQueue[proto.MessageData](1024)
-	t            = 0
+	serverIp           = flag.String("serverIpAddr", "172.20.0.100", "server ip")
+	messageQueue       = queue.NewQueue[proto.MessageData](1024)
+	lamport      int64 = 0
 )
 
 func main() {
@@ -77,7 +77,7 @@ func main() {
 	go getMessagesFromServer()
 
 	grpcServer := grpc.NewServer()
-	listener, err := net.Listen("tcp", ":"+strconv.Itoa(6969))
+	listener, err := net.Listen("tcp", ":"+strconv.Itoa(SERVER_PORT))
 	if err != nil {
 		log.Fatalf("Could not create the server %v", err)
 	}
@@ -91,18 +91,20 @@ func main() {
 
 func connectToServer() (proto.MessageServiceClient, error) {
 	// Dial the server at the specified port.
-	conn, err := grpc.Dial(*serverIp+":"+strconv.Itoa(*serverPort), grpc.WithTransportCredentials(insecure.NewCredentials()))
+	conn, err := grpc.Dial(fmt.Sprintf("%s:%s", *serverIp, strconv.Itoa(SERVER_PORT)), grpc.WithTransportCredentials(insecure.NewCredentials()))
 	if err != nil {
-		log.Fatalf("Could not connect to port %d", *serverPort)
+		log.Fatalf("Could not connect to port %d", SERVER_PORT)
 	}
 
 	return proto.NewMessageServiceClient(conn), nil
 }
 
 func registerWithServer(serverConnection proto.MessageServiceClient, client *Client) (*proto.Confirmation, error) {
+	lamport++
 	return serverConnection.Register(context.Background(), &proto.MessageData{
 		ClientIp:      client.ip,
 		ClientMessage: "Register",
+		LamportTs:     lamport,
 	})
 }
 
@@ -121,16 +123,23 @@ func sendMessageFromStdin(client *Client) {
 	for scanner.Scan() {
 		input := scanner.Text()
 
+		lamport++
 		// Ask the server for the time
 		_, err := serverConnection.SendMessageToServer(context.Background(), &proto.MessageData{
 			ClientIp:      client.ip,
 			ClientMessage: input,
+			LamportTs:     lamport,
 		})
 
 		if err != nil {
 			log.Fatal(err.Error())
 		}
 	}
+}
+
+// This will prompt the docker compose to re-join
+func leaveServer() {
+	os.Exit(0)
 }
 
 func sendMessagesWithInterval(client *Client) {
@@ -147,13 +156,19 @@ func sendMessagesWithInterval(client *Client) {
 	for {
 		time.Sleep(time.Duration(rand.Intn(15)) * time.Second)
 
+		if rand.Intn(len(NpcDialogOptions)) == 2 {
+			leaveServer()
+		}
+
 		randomDialog := NpcDialogOptions[rand.Intn(len(NpcDialogOptions))]
 		textMessage := fmt.Sprintf("[%s]: %s", client.ip, randomDialog)
 
+		lamport++
 		// Ask the server for the time
 		_, err := serverConnection.SendMessageToServer(context.Background(), &proto.MessageData{
 			ClientIp:      client.ip,
 			ClientMessage: textMessage,
+			LamportTs:     lamport,
 		})
 
 		if err != nil {
@@ -169,13 +184,18 @@ func getMessagesFromServer() error {
 			if err != nil {
 				log.Printf(err.Error())
 			} else {
-				fmt.Printf("\n\n\n%s\n\n\n", currentMessage.ClientMessage)
+				fmt.Printf("\n\n\n%s %d\n\n\n", currentMessage.ClientMessage, currentMessage.LamportTs)
 			}
 		}
 	}
 }
 
 func (c *Client) LogMessage(ctx context.Context, in *proto.MessageData) (*proto.Confirmation, error) {
+	if in.LamportTs > lamport {
+		lamport = in.LamportTs
+	}
+	lamport += 1
+
 	messageQueue.Enqueue(*in)
 	return &proto.Confirmation{
 		Confirmation: 200,
