@@ -9,6 +9,7 @@ import (
 	"os"
 	"strconv"
 
+	"github.com/AlbertRossJoh/itualgs_go/fundamentals/queue"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/credentials/insecure"
 )
@@ -24,8 +25,9 @@ type Server struct {
 const SERVER_PORT = 6969
 
 var (
-	clients       = make([]string, 0)
-	lamport int64 = 0
+	clients            = make([]string, 0)
+	lamport      int64 = 0
+	messageQueue       = queue.NewBufQueue[*proto.MessageData](1024)
 )
 
 // Used to get the user-defined port for the server from the command line
@@ -40,6 +42,8 @@ func main() {
 
 	// Start the server
 	go startServer(server)
+
+	go messageHandler()
 
 	// Keep the server running until it is manually quit
 	for {
@@ -76,14 +80,7 @@ func logMessageRpc(in *proto.MessageData) {
 
 		conn, err := grpc.Dial(fmt.Sprintf("%s:%s", clientIp, strconv.Itoa(SERVER_PORT)), grpc.WithTransportCredentials(insecure.NewCredentials()))
 		if err != nil {
-			tmp := make([]string, 0)
-			for _, clientIp1 := range clients {
-				if clientIp1 != clientIp {
-					tmp = append(tmp, clientIp1)
-				}
-			}
-			clients = tmp
-			log.Printf("Failed to connect to client with IP: %s\n", clientIp)
+			unregisterClient(clientIp)
 			continue
 		}
 
@@ -97,23 +94,53 @@ func logMessageRpc(in *proto.MessageData) {
 		})
 
 		if err != nil {
-			log.Fatal(err.Error())
+			unregisterClient(clientIp)
+			continue
+		}
+		conn.Close()
+	}
+}
+
+func messageHandler() {
+	for {
+		for !messageQueue.IsEmpty() {
+			val, _ := messageQueue.Dequeue()
+			logMessageRpc(val)
 		}
 	}
 }
 
+func unregisterClient(clientIp string) {
+	messageQueue.Enqueue(&proto.MessageData{
+		ClientIp:      "Server",
+		ClientMessage: fmt.Sprintf("Participant %s left Chitty-Chat at Lamport time %d", clientIp, lamport),
+		LamportTs:     lamport,
+	})
+	tmp := make([]string, 0)
+	for _, clientIp1 := range clients {
+		if clientIp1 != clientIp {
+			tmp = append(tmp, clientIp1)
+		}
+	}
+	clients = tmp
+}
+
 func registerClient(in *proto.MessageData) {
 	clients = append(clients, in.ClientIp)
+	messageQueue.Enqueue(&proto.MessageData{
+		ClientIp:      "Server",
+		ClientMessage: fmt.Sprintf("Participant %s  joined Chitty-Chat at Lamport time %d\n", in.ClientIp, lamport),
+		LamportTs:     lamport,
+	})
 }
 
 func (c *Server) SendMessageToServer(ctx context.Context, in *proto.MessageData) (*proto.Confirmation, error) {
-
 	if in.LamportTs > lamport {
 		lamport = in.LamportTs
 	}
 	lamport += 1
 
-	logMessageRpc(in)
+	messageQueue.Enqueue(in)
 
 	return &proto.Confirmation{
 		Confirmation: 200,
@@ -127,8 +154,6 @@ func (c *Server) Register(ctx context.Context, in *proto.MessageData) (*proto.Co
 		lamport = in.LamportTs
 	}
 	lamport += 1
-
-	log.Printf("Participant %s  joined Chitty-Chat at Lamport time %d\n", in.ClientIp, lamport)
 
 	registerClient(in)
 

@@ -18,6 +18,19 @@ import (
 	"google.golang.org/grpc/credentials/insecure"
 )
 
+type Client struct {
+	proto.UnimplementedClientServiceServer
+	ip string
+}
+
+const SERVER_PORT = 6969
+
+var (
+	serverIp           = flag.String("serverIpAddr", "172.20.0.100", "server ip")
+	messageQueue       = queue.NewQueue[*proto.MessageData](1024)
+	lamport      int64 = 0
+)
+
 var NpcDialogOptions = []string{
 	"Have you heard of the high elves?",
 	"Hey you. You're finally awake.",
@@ -49,19 +62,6 @@ var NpcDialogOptions = []string{
 	"And, when you want something, all the universe conspires in helping you to achieve it.",
 }
 
-type Client struct {
-	proto.UnimplementedClientServiceServer
-	ip string
-}
-
-const SERVER_PORT = 6969
-
-var (
-	serverIp           = flag.String("serverIpAddr", "172.20.0.100", "server ip")
-	messageQueue       = queue.NewQueue[proto.MessageData](1024)
-	lamport      int64 = 0
-)
-
 func main() {
 	// Parse the flags to get the port for the client
 	flag.Parse()
@@ -86,6 +86,41 @@ func main() {
 
 	for {
 
+	}
+}
+
+func sendMessagesWithInterval(client *Client) {
+	// Connect to the server
+	serverConnection, _ := connectToServer()
+
+	_, err := registerWithServer(serverConnection, client)
+
+	if err != nil {
+		log.Fatal("Failed to connect to the server!\n", err)
+	}
+
+	// Wait for input in the client terminal
+	for {
+		time.Sleep(time.Duration(rand.Intn(15)) * time.Second)
+
+		if rand.Intn(len(NpcDialogOptions)) == 2 {
+			leaveServer()
+		}
+
+		randomDialog := NpcDialogOptions[rand.Intn(len(NpcDialogOptions))]
+		textMessage := fmt.Sprintf("[%s]: %s", client.ip, randomDialog)
+
+		lamport++
+		// Ask the server for the time
+		_, err := serverConnection.SendMessageToServer(context.Background(), &proto.MessageData{
+			ClientIp:      client.ip,
+			ClientMessage: textMessage,
+			LamportTs:     lamport,
+		})
+
+		if err != nil {
+			log.Fatal(err.Error())
+		}
 	}
 }
 
@@ -142,41 +177,6 @@ func leaveServer() {
 	os.Exit(0)
 }
 
-func sendMessagesWithInterval(client *Client) {
-	// Connect to the server
-	serverConnection, _ := connectToServer()
-
-	_, err := registerWithServer(serverConnection, client)
-
-	if err != nil {
-		log.Fatal("Failed to connect to the server!\n", err)
-	}
-
-	// Wait for input in the client terminal
-	for {
-		time.Sleep(time.Duration(rand.Intn(15)) * time.Second)
-
-		if rand.Intn(len(NpcDialogOptions)) == 2 {
-			leaveServer()
-		}
-
-		randomDialog := NpcDialogOptions[rand.Intn(len(NpcDialogOptions))]
-		textMessage := fmt.Sprintf("[%s]: %s", client.ip, randomDialog)
-
-		lamport++
-		// Ask the server for the time
-		_, err := serverConnection.SendMessageToServer(context.Background(), &proto.MessageData{
-			ClientIp:      client.ip,
-			ClientMessage: textMessage,
-			LamportTs:     lamport,
-		})
-
-		if err != nil {
-			log.Fatal(err.Error())
-		}
-	}
-}
-
 func getMessagesFromServer() error {
 	for {
 		for !messageQueue.IsEmpty() {
@@ -184,7 +184,7 @@ func getMessagesFromServer() error {
 			if err != nil {
 				log.Printf(err.Error())
 			} else {
-				fmt.Printf("\n\n\n%s %d\n\n\n", currentMessage.ClientMessage, currentMessage.LamportTs)
+				fmt.Printf("%s %d\n", currentMessage.ClientMessage, lamport)
 			}
 		}
 	}
@@ -196,7 +196,7 @@ func (c *Client) LogMessage(ctx context.Context, in *proto.MessageData) (*proto.
 	}
 	lamport += 1
 
-	messageQueue.Enqueue(*in)
+	messageQueue.Enqueue(in)
 	return &proto.Confirmation{
 		Confirmation: 200,
 	}, nil
