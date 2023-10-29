@@ -89,6 +89,8 @@ func main() {
 	}
 }
 
+// Simulates the user sending a message. It currently just sends a random predefined message from
+// `NpcDialogOptions` with random intervals in between.
 func sendMessagesWithInterval(client *Client) {
 	// Connect to the server
 	serverConnection, _ := connectToServer()
@@ -143,6 +145,8 @@ func registerWithServer(serverConnection proto.MessageServiceClient, client *Cli
 	})
 }
 
+// Waits for user input in terminal. Currently not used because we use docker, but it
+// is intended that the program will send a message when the user wants to.
 func sendMessageFromStdin(client *Client) {
 	// Connect to the server
 	serverConnection, _ := connectToServer()
